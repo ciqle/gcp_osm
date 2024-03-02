@@ -36,6 +36,40 @@ Suggest to use perl script as it's much faster. The script is copied from [geo-o
 Note that you need to run below dependencies for perl script.
 
 `cpan JSON`
+
 `cpan Text::CSV::Encoded`
 
 The usage for converting: `./csv-to-json.sh <the_path_containing_csv_files> <py|perl>`
+
+### Step 1.3: Load JSONL files into BigQuery
+Once we have all the 5 CSVs, the next step is to upload them to Cloud Storage via `gsutil`:
+
+`gsutil cp <path_to_local_jsonl_files> gs://***`
+
+Next using a BigQuery query to load the files into BigQuery:
+
+`CREATE OR REPLACE EXTERNAL TABLE "<dataset>.multipolygons-external" (
+  osm_id INTEGER,
+  osm_version INTEGER,
+  osm_way_id INTEGER,
+  osm_timestamp TIMESTAMP,
+  geometry STRING,
+  all_tags ARRAY<STRUCT<key STRING, value STRING>>
+)
+OPTIONS (
+  format = 'NEWLINE_DELIMITED_JSON',
+  uris = ['gs://***/multipolygons.geojson.csv.jsonl'],
+  max_bad_records = 10000
+);`
+
+In the example we use multipolygons layer, but for other layers the structure of SQL query is the same, except for loading different JSONL source files.
+
+Note that geometry here is of String type, so in the next step it needs to be converted to GEOMETRY type(BigQuery's native type for geometry object):
+
+`CREATE OR REPLACE TABLE "<dataset>.multipolygons"
+AS
+SELECT
+    osm_id,osm_version,osm_way_id,osm_timestamp,
+    SAFE.ST_GEOGFROMGEOJSON(geometry, make_valid => TRUE) as geometry,
+    all_tags
+FROM "<dataset>.multipolygons-external";`
